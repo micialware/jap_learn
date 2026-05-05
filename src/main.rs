@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+mod data_provider;
 mod dictionary;
 mod dictionary_test;
 mod lang;
@@ -7,15 +8,14 @@ mod randomizer;
 mod repetition;
 mod repetitions;
 mod selector;
-mod writing;
-mod data_provider;
 mod word;
+mod writing;
 
 use crate::data_provider::card_sets::load_sets;
-use crate::data_provider::words::{create_db, load_words};
+use crate::data_provider::words::{create_db, load_word_groups, load_words};
 use crate::dictionary::{app_data_dir, DictionaryMessage, DictionaryState};
 use crate::dictionary_test::{DictionaryQuizMessage, DictionaryQuizState};
-use crate::lang::DictionaryElement;
+use crate::lang::{WordData, WordGroup};
 use crate::quiz::*;
 use crate::randomizer::randomizer::{RandomizerMessage, RandomizerState};
 use crate::repetition::{RepetitionMessage, RepetitionState};
@@ -24,7 +24,7 @@ use crate::selector::*;
 use crate::word::{WordMessage, WordState};
 use crate::writing::{WritingMessage, WritingState};
 use crate::Page::{
-    Dictionary, DictionaryQuiz, Quiz, Randomizer, Repetition, Repetitions, Selector, Word, Writing
+    Dictionary, DictionaryQuiz, Quiz, Randomizer, Repetition, Repetitions, Selector, Word, Writing,
 };
 use crate::RootMessage::Keyboard;
 use iced::keyboard::Event;
@@ -37,12 +37,12 @@ use std::sync::{Arc, Mutex};
 const DEFAULT_SPACING: f32 = 10.0;
 
 fn main() -> iced::Result {
-    iced::application(ScreenState::boot, ScreenState::update, ScreenState::view).subscription(subscription)
+    iced::application(ScreenState::boot, ScreenState::update, ScreenState::view)
+        .subscription(subscription)
         .title("Kana learn app")
         .font(include_bytes!("../noto.ttf"))
         .default_font(Font::with_name("Noto Sans JP"))
-        .
-            run()
+        .run()
 }
 
 fn subscription(_state: &ScreenState) -> Subscription<RootMessage> {
@@ -81,9 +81,10 @@ pub struct ScreenState {
 }
 
 pub struct AppState {
-    pub dictionary: Vec<DictionaryElement>,
+    pub dictionary: Vec<WordData>,
     pub card_sets: Vec<CardSetSettings>,
-    pub connection: Connection
+    pub word_groups: Vec<WordGroup>,
+    pub connection: Connection,
 }
 
 impl Default for ScreenState {
@@ -92,10 +93,16 @@ impl Default for ScreenState {
         let db_file = path.join("data.db");
         let connection = Connection::open(db_file).unwrap();
         connection.execute("PRAGMA foreign_keys = ON;", []).unwrap();
-        let list: Vec<DictionaryElement> = load_words(&connection);
-        let sets: Vec<CardSetSettings> = load_sets(&connection);
+        let list = load_words(&connection);
+        let sets = load_sets(&connection);
+        let groups = load_word_groups(&connection);
 
-        let state = Arc::new(Mutex::new(AppState { dictionary: list, card_sets: sets, connection }));
+        let state = Arc::new(Mutex::new(AppState {
+            dictionary: list,
+            card_sets: sets,
+            connection,
+            word_groups: groups,
+        }));
         ScreenState {
             stack: vec![Selector(SelectorState::new(state.clone()))],
         }
@@ -147,11 +154,9 @@ impl ScreenState {
         return match page {
             Repetition(page) => page.press(&message),
             _ => Task::none(),
-        }
+        };
     }
 }
-
-
 
 #[macro_export]
 macro_rules! view_navigation {

@@ -1,5 +1,5 @@
 use crate::data_provider::card_sets::{delete_set, update_card_set};
-use crate::lang::DictionaryElement;
+use crate::lang::WordData;
 use crate::repetition::RepetitionState;
 use crate::Page::{PreviousPage, Repetition};
 use crate::{AppState, NavigatedPage, Page, RootMessage, DEFAULT_SPACING};
@@ -255,7 +255,7 @@ impl CardSetSettings {
         ast.is_ok()
     }
 
-    pub fn get_word_list(&self, state: &AppState) -> Vec<DictionaryElement> {
+    pub fn get_word_list(&self, state: &AppState) -> Vec<WordData> {
         let mut list = vec![];
         let engine = Engine::new();
         let ast = engine.compile(&self.filter);

@@ -9,12 +9,12 @@ use iced::widget::{button, container, row, space, text, text_input, Row};
 use iced::Background::Color;
 use iced::{alignment, Border, Element, Fill, Task, Theme};
 use rand::prelude::SliceRandom;
-use crate::lang::DictionaryElement;
+use crate::lang::WordData;
 
 #[derive(Debug, Clone)]
 pub struct DictionaryQuizState {
-    words: Vec<DictionaryElement>,
-    current_set: Vec<DictionaryElement>,
+    words: Vec<WordData>,
+    current_set: Vec<WordData>,
     answer: String,
     view: String,
     correct: String,
@@ -43,7 +43,7 @@ impl NavigatedPage<DictionaryQuizMessage> for DictionaryQuizState {
 
 impl DictionaryQuizState {
     pub fn new(
-        words: Vec<DictionaryElement>,
+        words: Vec<WordData>,
         reverse: bool,
         no_typing: bool,
     ) -> DictionaryQuizState {

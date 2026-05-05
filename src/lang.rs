@@ -229,15 +229,16 @@ impl PartialEq<Self> for KanaSet {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DictionaryElement {
+pub struct WordData {
     pub id: u32,
     pub key: String,
     pub value: String,
     pub tags: String,
     pub additional: HashMap<String, String>,
+    pub group_id: u32
 }
 
-impl DictionaryElement {
+impl WordData {
     pub fn new() -> Self {
         Self {
             id: 0,
@@ -245,8 +246,14 @@ impl DictionaryElement {
             value: String::new(),
             tags: String::new(),
             additional: Default::default(),
+            group_id: 1
         }
     }
+}
+
+pub struct WordGroup{
+    pub id: u32,
+    pub name: String,
 }
 
 #[derive(Clone, PartialEq)]
@@ -302,7 +309,7 @@ pub enum WordOpenMode {
 
 #[derive(Clone)]
 pub struct CardSet {
-    words: Vec<DictionaryElement>,
+    words: Vec<WordData>,
     set: Vec<CardStatistics>,
     last_weights: WeightedIndex<f32>,
     current_word_index: Option<usize>,
@@ -360,7 +367,7 @@ impl CardSet {
     }
 
 
-    pub fn next(&mut self) -> DictionaryElement {
+    pub fn next(&mut self) -> (WordData, CardStatistics) {
         let index = self.last_weights.sample(&mut self.generator);
 
         if self.history.contains(&index) {
@@ -372,7 +379,7 @@ impl CardSet {
         }
         self.history.push(index);
         self.current_word_index = Some(index);
-        self.words[index].clone()
+        (self.words[index].clone(), self.set[index].clone())
     }
 
     pub fn open(&mut self, status: WordOpenMode) {

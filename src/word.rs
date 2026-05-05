@@ -1,5 +1,5 @@
 use crate::data_provider::words::{delete_word, update_word};
-use crate::lang::DictionaryElement;
+use crate::lang::WordData;
 use crate::Page::PreviousPage;
 use crate::{AppState, NavigatedPage, Page, RootMessage, DEFAULT_SPACING};
 use iced::widget::button::danger;
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 pub struct WordState {
     state: Arc<Mutex<AppState>>,
     index: usize,
-    word: DictionaryElement,
+    word: WordData,
 }
 
 impl NavigatedPage<WordMessage> for WordState {
@@ -26,7 +26,7 @@ impl NavigatedPage<WordMessage> for WordState {
 
 impl WordState {
     pub(crate) fn new(
-        word: DictionaryElement,
+        word: WordData,
         index: usize,
         state: Arc<Mutex<AppState>>,
     ) -> WordState {

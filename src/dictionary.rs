@@ -1,7 +1,7 @@
 use crate::data_provider::words::{delete_word, update_word};
 use crate::dictionary::DictionaryMessage::Test;
 use crate::dictionary_test::DictionaryQuizState;
-use crate::lang::DictionaryElement;
+use crate::lang::WordData;
 use crate::word::WordState;
 use crate::Page::Word;
 use crate::{AppState, NavigatedPage, Page, RootMessage, DEFAULT_SPACING};
@@ -41,6 +41,7 @@ pub enum DictionaryMessage {
     SetReverse(bool),
     Search(String),
     SetTyping(bool),
+    
 }
 
 impl NavigatedPage<DictionaryMessage> for DictionaryState {
@@ -66,7 +67,7 @@ impl NavigatedPage<DictionaryMessage> for DictionaryState {
             }
         }
         if let DictionaryMessage::WordAction(index) = message {
-            let word : DictionaryElement;
+            let word : WordData;
             {
                 let state = self.state.lock().unwrap();
                 let dict = &state.dictionary;
@@ -101,7 +102,7 @@ impl DictionaryState {
         match message {
             DictionaryMessage::NewWord => {
                 let dict = &mut self.state.lock().unwrap().dictionary;
-                dict.push(DictionaryElement::new());
+                dict.push(WordData::new());
                 self.include_map.push(false);
             }
 

@@ -1,14 +1,14 @@
-use std::collections::HashSet;
 use crate::data_provider::voice::get_voice;
-use crate::lang::{CardSet, DictionaryElement, WordOpenMode};
+use crate::lang::{CardSet, CardStatistics, WordData, WordOpenMode};
 use crate::repetitions::CardSetSettings;
 use crate::Page::PreviousPage;
 use crate::{AppState, KeyPressedPage, NavigatedPage, Page, RootMessage, DEFAULT_SPACING};
 use iced::alignment::Horizontal::Center;
 use iced::keyboard::key::Physical::Code;
-use iced::widget::{button, column, container, row, rule, space, text};
+use iced::widget::{button, column, container, row, rule, space, text, Column};
 use iced::{alignment, keyboard, Element, Fill, Left, Task};
 use rodio::MixerDeviceSink;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tokio::task::spawn_blocking;
 
@@ -16,7 +16,8 @@ pub struct RepetitionState {
     pub settings: CardSetSettings,
     pub set: CardSet,
     pub state: Arc<Mutex<AppState>>,
-    current_word: DictionaryElement,
+    current_word: WordData,
+    current_statistic: CardStatistics,
     open: bool,
     can_play: bool,
     sink: Arc<MixerDeviceSink>,
@@ -36,7 +37,7 @@ impl NavigatedPage<RepetitionMessage> for RepetitionState {
 impl RepetitionState {
     pub(crate) fn new(set: CardSetSettings, state: Arc<Mutex<AppState>>) -> RepetitionState {
         let mut card_set = CardSet::new(&set, state.clone());
-        let word = card_set.next();
+        let (word, stat)  = card_set.next();
         let sink_handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
 
         RepetitionState {
@@ -44,6 +45,7 @@ impl RepetitionState {
             set: card_set,
             state,
             current_word: word,
+            current_statistic: stat,
             open: false,
             can_play: true,
             sink: Arc::new(sink_handle),
@@ -60,15 +62,17 @@ impl RepetitionState {
             RepetitionMessage::Answer(m) => return self.answer(m),
             RepetitionMessage::Play => {
                 if !self.can_play {
-                    return Task::none()
+                    return Task::none();
                 }
 
                 self.can_play = false;
                 let value = self.current_word.key.clone();
                 if self.settings.require_speech() {
-                    return Task::perform(play_sound(self.sink.clone(), value), |_| RootMessage::Repetition(RepetitionMessage::PlayFinished));
+                    return Task::perform(play_sound(self.sink.clone(), value), |_| {
+                        RootMessage::Repetition(RepetitionMessage::PlayFinished)
+                    });
                 }
-            },
+            }
             RepetitionMessage::PlayFinished => {
                 self.can_play = true;
             }
@@ -76,8 +80,6 @@ impl RepetitionState {
 
         Task::none()
     }
-
-
 
     fn next(&mut self) -> Task<RootMessage> {
         if self.open {
@@ -96,10 +98,15 @@ impl RepetitionState {
         self.set.open(mode);
         self.open = false;
         self.opened.insert(self.current_word.id);
-        self.current_word = self.set.next();
+        let next = self.set.next();
+        self.current_word = next.0;
+        self.current_statistic = next.1;
 
         if self.settings.require_speech() {
-            return Task::perform(play_sound(self.sink.clone(), self.current_word.key.clone()), |_| RootMessage::Repetition(RepetitionMessage::PlayFinished));
+            return Task::perform(
+                play_sound(self.sink.clone(), self.current_word.key.clone()),
+                |_| RootMessage::Repetition(RepetitionMessage::PlayFinished),
+            );
         }
         Task::none()
     }
@@ -123,8 +130,13 @@ impl RepetitionState {
                     container(self.answer_bar())
                         .width(Fill)
                         .align_x(Center)
-                        .height(30),
-                    text!("Затронуто слов {}, {}%", self.opened.len(), (self.opened.len() as f32 / self.set.len() as f32 * 10000.0).round() / 100.0)
+                        .height(60),
+                    text!(
+                        "Затронуто слов {}, {}%",
+                        self.opened.len(),
+                        (self.opened.len() as f32 / self.set.len() as f32 * 10000.0).round()
+                            / 100.0
+                    )
                 ]
                 .height(Fill)
                 .width(Fill)
@@ -138,13 +150,8 @@ impl RepetitionState {
     }
 
     fn draw_forward(&self) -> Element<'_, RepetitionMessage> {
-        let word = &self.current_word;
-        match self.settings.forward.as_str() {
-            "key" => self.draw_key(word),
-            "value" => self.draw_value(word),
-            "speech" => self.draw_voice(),
-            _ => space().into(),
-        }
+        self.draw_card_view(self.settings.forward.as_str())
+
     }
 
     fn draw_backward(&self) -> Element<'_, RepetitionMessage> {
@@ -152,13 +159,26 @@ impl RepetitionState {
             return space().into();
         }
 
+
+        self.draw_card_view(self.settings.backward.as_str())
+    }
+
+    fn draw_card_view(&self, properties: &str) -> Element<'_, RepetitionMessage> {
         let word = &self.current_word;
-        match self.settings.backward.as_str() {
-            "key" => self.draw_key(word),
-            "value" => self.draw_value(word),
-            "speech" => self.draw_voice(),
-            _ => space().into(),
+
+        let mut col = Column::new();
+
+        for view_type in properties.split(" ") {
+            col = col.push( match view_type {
+                "key" => self.draw_key(word),
+                "value" => self.draw_value(word),
+                "speech" => self.draw_voice(),
+                "reading" => self.draw_reading(word),
+                _ => space().into(),
+            })
         }
+
+        col.spacing(DEFAULT_SPACING).into()
     }
 
     fn answer_bar(&self) -> Element<'_, RepetitionMessage> {
@@ -166,28 +186,39 @@ impl RepetitionState {
             return space().into();
         }
 
-        row![
-            button("Не получилось").on_press(RepetitionMessage::Answer(WordOpenMode::None)),
-            button("Трудно").on_press(RepetitionMessage::Answer(WordOpenMode::Hard)),
-            button("Нормально").on_press(RepetitionMessage::Answer(WordOpenMode::Ok)),
-            button("Легко").on_press(RepetitionMessage::Answer(WordOpenMode::Easy)),
+        column![
+            text!("{} очков", self.current_statistic.calculated_score().round() as i32),
+            row![
+                button("Не получилось").on_press(RepetitionMessage::Answer(WordOpenMode::None)),
+                button("Трудно").on_press(RepetitionMessage::Answer(WordOpenMode::Hard)),
+                button("Нормально").on_press(RepetitionMessage::Answer(WordOpenMode::Ok)),
+                button("Легко").on_press(RepetitionMessage::Answer(WordOpenMode::Easy)),
+            ]
+            .spacing(DEFAULT_SPACING)
         ]
+        .align_x(Center)
         .spacing(DEFAULT_SPACING)
         .into()
     }
 
-    fn draw_key(&self, word: &DictionaryElement) -> Element<'_, RepetitionMessage> {
+    fn draw_key(&self, word: &WordData) -> Element<'_, RepetitionMessage> {
         text!("{}", word.key).size(36).into()
     }
-    fn draw_value(&self, word: &DictionaryElement) -> Element<'_, RepetitionMessage> {
+    fn draw_value(&self, word: &WordData) -> Element<'_, RepetitionMessage> {
         text!("{}", word.value).size(24).into()
     }
 
     fn draw_voice(&self) -> Element<'_, RepetitionMessage> {
-
         button("Воспроизвести")
             .on_press(RepetitionMessage::Play)
             .into()
+    }
+
+    fn draw_reading(&self, word: &WordData) -> Element<'_, RepetitionMessage> {
+        match word.additional.get("reading") {
+            None => space().into(),
+            Some(reading) => text!("{}", reading).size(24).into(),
+        }
     }
 }
 
@@ -211,12 +242,10 @@ impl KeyPressedPage for RepetitionState {
                     keyboard::key::Code::Digit3 => self.answer(WordOpenMode::Ok),
                     keyboard::key::Code::Digit4 => self.answer(WordOpenMode::Easy),
                     _ => Task::none(),
-                }
+                };
             }
-
         }
         Task::none()
-
     }
 }
 
@@ -233,5 +262,7 @@ async fn play_sound(sink: Arc<MixerDeviceSink>, text: String) {
     let data = get_voice(text.as_str()).await;
     spawn_blocking(move || {
         rodio::play(&sink.mixer(), data).unwrap().sleep_until_end();
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 }
