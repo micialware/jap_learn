@@ -146,6 +146,7 @@ impl DictionaryState {
                 let state = &mut self.state.lock().unwrap();
                 let dict = &mut state.dictionary;
                 let word = dict.remove(i);
+                self.include_map.remove(i);
                 delete_word(&word, &state.connection)
             }
             DictionaryMessage::Include(i, b) => self.include_map[i] = b,
