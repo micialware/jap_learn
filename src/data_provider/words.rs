@@ -17,51 +17,68 @@ pub fn create_db() {
 
 fn create_tables(conn: &Connection) {
     conn.execute(
-        "
-        CREATE TABLE word_group (
-            id   INTEGER PRIMARY KEY AUTOINCREMENT,
-            name   TEXT NOT NULL
-        );
-
-        insert into word_group (name)
-        values (\"Слова\");
-
-      CREATE TABLE words (
-            id   INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT NOT NULL,
-            value TEXT NOT NULL,
-            tags TEXT NOT NULL,
-            more TEXT,
-            group_id INTEGER NOT NULL DEFAULT 1,
-            FOREIGN KEY(group_id) REFERENCES word_group(id)
-        );
-
-        CREATE TABLE card_stats (
-            id   INTEGER PRIMARY KEY AUTOINCREMENT,
-            word_id INTEGER NOT NULL,
-            set_id TEXT NOT NULL,
-            score INTEGER NOT NULL DEFAULT 1,
-            last_opened INTEGER NOT NULL,
-            FOREIGN KEY (word_id)  REFERENCES words (id) ON DELETE CASCADE,
-            FOREIGN KEY (set_id)  REFERENCES card_set (id) ON DELETE CASCADE
-        );
-
-
-
-        CREATE TABLE card_set (
-            id   INTEGER PRIMARY KEY AUTOINCREMENT,
-            name   TEXT NOT NULL,
-            forward TEXT NOT NULL,
-            backward TEXT NOT NULL,
-            filter TEXT NOT NULL
-        );
-        ",
+        "create table card_set
+(
+    id       INTEGER
+        primary key autoincrement,
+    name     TEXT not null,
+    forward  TEXT not null,
+    backward TEXT not null,
+    filter   TEXT not null
+);",
         (),
     )
-    .unwrap_or_else(|e| {
-        println!("{}", e);
-        0
-    });
+    .unwrap();
+    conn.execute(
+        "create table word_group
+(
+    id   INTEGER
+        primary key autoincrement,
+    name TEXT not null
+);",
+        (),
+    )
+    .unwrap();
+    conn.execute(
+        "create table words
+(
+    id       INTEGER
+        primary key autoincrement,
+    key      TEXT              not null,
+    value    TEXT              not null,
+    tags     TEXT              not null,
+    more     TEXT,
+    group_id integer default 1 not null
+        constraint words_word_group_id_fk
+            references word_group
+            on update cascade on delete cascade
+);",
+        (),
+    )
+    .unwrap();
+    conn.execute(
+        "create table card_stats
+(
+    id          INTEGER
+        primary key autoincrement,
+    word_id     INTEGER           not null
+        references words
+            on delete cascade,
+    set_id      TEXT              not null
+        references card_set
+            on delete cascade,
+    score       INTEGER default 1 not null,
+    last_opened integer           not null
+);",
+        (),
+    )
+    .unwrap();
+    conn.execute(
+        "insert into word_group (name)
+values (\"Слова\");",
+        (),
+    )
+    .unwrap();
 }
 
 pub fn add_word(word: &mut WordData, connection: &Connection) {
@@ -171,9 +188,7 @@ pub fn add_group(group: &mut WordGroup, connection: &Connection) {
     let index = connection
         .query_row(
             "INSERT INTO word_group (name) VALUES (?1) RETURNING id",
-            (
-                &group.name,
-            ),
+            (&group.name,),
             |row| row.get(0),
         )
         .unwrap_or_else(|e| {
@@ -191,10 +206,7 @@ pub fn update_group(group: &mut WordGroup, connection: &Connection) {
         connection
             .execute(
                 "UPDATE word_group SET name = ?1 WHERE id = ?5",
-                (
-                    &group.name,
-                    &group.id,
-                ),
+                (&group.name, &group.id),
             )
             .unwrap_or_else(|e| {
                 println!("{}", e);
