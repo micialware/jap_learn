@@ -16,14 +16,12 @@ use iced::widget::*;
 use iced::{Border, Color, Length, Shadow, Task};
 use rand::random_range;
 use rayon::iter::IndexedParallelIterator;
-use rayon::iter::ParallelIterator;
-use rayon::prelude::IntoParallelRefIterator;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::ops::Add;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use DictionaryMessage::Back;
 
 #[derive(Clone)]
@@ -76,7 +74,7 @@ impl NavigatedPage<DictionaryMessage> for DictionaryState {
 
                 words = self
                     .include_map
-                    .par_iter()
+                    .iter()
                     .zip(0..self.include_map.len())
                     .filter(|(flag, _)| **flag)
                     .map(|(_, index)| dict[index].clone())
@@ -479,12 +477,16 @@ impl DictionaryState {
         }
 
         let dict = &self.state.lock().unwrap().dictionary;
+        let time = Instant::now();
 
-        self.include_map = dict.par_iter()
+        self.include_map = dict.iter()
             .map(|word| (split_with_coma(word.tags.as_str()), word.group_id))
             .map(|(tags, word_group_id)| {
                 tags.iter().all(|t| include_tags.contains(t)) && word_group_id == group_id
             }).collect();
+
+        println!("Time {}", time.elapsed().as_micros());
+
     }
 
     fn groups_panel(&self) -> iced::Element<'_, DictionaryMessage> {

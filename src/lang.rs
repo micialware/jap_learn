@@ -1,5 +1,6 @@
-use std::cmp::min;
-use crate::data_provider::card_stats::{add_stat, delete_stat, load_stats_of_set, update_stat_score};
+use crate::data_provider::card_stats::{
+    add_stat, delete_stat, load_stats_of_set, update_stat_score,
+};
 use crate::repetitions::CardSetSettings;
 use crate::AppState;
 use chrono::{DateTime, Utc};
@@ -8,6 +9,7 @@ use rand::distr::Distribution;
 use rand::rng;
 use rand::rngs::ThreadRng;
 use serde::{Deserialize, Serialize};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -235,7 +237,7 @@ pub struct WordData {
     pub value: String,
     pub tags: String,
     pub additional: HashMap<String, String>,
-    pub group_id: u32
+    pub group_id: u32,
 }
 
 impl WordData {
@@ -246,13 +248,13 @@ impl WordData {
             value: String::new(),
             tags: String::new(),
             additional: Default::default(),
-            group_id: 1
+            group_id: 1,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct WordGroup{
+pub struct WordGroup {
     pub id: u32,
     pub name: String,
 }
@@ -272,9 +274,7 @@ impl CardStatistics {
             WordOpenMode::Easy => {
                 self.score = (self.calculated_score() + 5.0).round() as i32;
             }
-            WordOpenMode::Ok => {
-                self.score = (self.calculated_score() + 2.0).round() as i32
-            }
+            WordOpenMode::Ok => self.score = (self.calculated_score() + 2.0).round() as i32,
             WordOpenMode::Hard => {
                 self.score = (self.calculated_score() - 1.0).round() as i32;
             }
@@ -289,14 +289,13 @@ impl CardStatistics {
             self.score = MAX_SCORE
         }
         self.last_open = Utc::now();
-
     }
 
     pub fn calculated_score(&self) -> f32 {
         let time = Utc::now() - self.last_open;
         let days = time.num_days();
         let multiplier = FADE_PER_DAY.powi(days as i32);
-         self.score as f32 * multiplier
+        self.score as f32 * multiplier
     }
 }
 
@@ -316,7 +315,7 @@ pub struct CardSet {
     current_word_index: Option<usize>,
     generator: ThreadRng,
     state: Arc<Mutex<AppState>>,
-    history: Vec<usize>
+    history: Vec<usize>,
 }
 
 impl CardSet {
@@ -328,33 +327,38 @@ impl CardSet {
         let last_list = settings.get_word_list(&state_locked);
         let saved_ids = current_set.iter().map(|l| l.word_id).collect::<Vec<u32>>();
         let word_ids = last_list.iter().map(|l| l.id).collect::<Vec<u32>>();
-        for word in &last_list {
-            if !saved_ids.contains(&word.id) {
-                let mut new_statistic = CardStatistics {
+
+        last_list
+            .iter()
+            .filter(|word| !saved_ids.contains(&word.id))
+            .map(|word| {
+                CardStatistics {
                     id: 0,
                     word_id: word.id.clone(),
                     last_open: Utc::now(),
                     score: 1,
                     set_id: settings.id.clone(),
-                };
-
+                }
+            })
+            .for_each(|mut new_statistic| {
                 add_stat(&mut new_statistic, &state_locked.connection);
-
                 current_set.push(new_statistic);
-            }
-        }
+            });
 
         let mut index = 0;
         for stat in current_set.clone() {
             if !word_ids.contains(&stat.word_id) {
                 delete_stat(&stat, &state_locked.connection);
                 current_set.remove(index);
-            }else{
+            } else {
                 index += 1;
             }
         }
 
-        let weights = current_set.iter().map(|s| (100.0 / s.calculated_score()).powf(2.0) * 2.0).collect::<Vec<f32>>();
+        let weights = current_set
+            .iter()
+            .map(|s| (100.0 / s.calculated_score()).powf(2.0) * 2.0)
+            .collect::<Vec<f32>>();
         let indexes = WeightedIndex::new(weights).unwrap();
 
         Self {
@@ -368,12 +372,11 @@ impl CardSet {
         }
     }
 
-
     pub fn next(&mut self) -> (WordData, CardStatistics) {
         let index = self.last_weights.sample(&mut self.generator);
 
         if self.history.contains(&index) {
-            return self.next()
+            return self.next();
         }
 
         if self.history.len() == self.history_len() {
@@ -392,14 +395,17 @@ impl CardSet {
         let word = &mut self.set[self.current_word_index.unwrap()];
         word.update(status);
         let new_weight = (100.0 / word.calculated_score()).powf(2.0);
-        self.last_weights.update_weights(&[(self.current_word_index.unwrap(), &new_weight)]).unwrap();
-        {
-            update_stat_score(word, &self.state.lock().unwrap().connection)
-        }
+        self.last_weights
+            .update_weights(&[(self.current_word_index.unwrap(), &new_weight)])
+            .unwrap();
+        { update_stat_score(word, &self.state.lock().unwrap().connection) }
     }
 
     fn history_len(&self) -> usize {
-        min(MAX_HISTORY_LEN, (self.set.len() as f32 * MAX_HISTORY_LEN_PART) as usize)
+        min(
+            MAX_HISTORY_LEN,
+            (self.set.len() as f32 * MAX_HISTORY_LEN_PART) as usize,
+        )
     }
 
     pub fn len(&self) -> usize {
