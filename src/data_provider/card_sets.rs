@@ -1,5 +1,6 @@
 use crate::repetitions::CardSetSettings;
 use rusqlite::Connection;
+use crate::lang::SetOrderMode;
 
 pub fn load_sets(connection: &Connection) -> Vec<CardSetSettings> {
     let mut stmt = connection.prepare("SELECT id, name, forward, backward, filter FROM card_set").unwrap();
@@ -10,7 +11,9 @@ pub fn load_sets(connection: &Connection) -> Vec<CardSetSettings> {
             forward: row.get(2)?,
             backward: row.get(3)?,
             filter: row.get(4)?,
-            count: None
+            count: None,
+            worst_words_list: None,
+            open_mode: SetOrderMode::Default,
         })
     }).unwrap();
 

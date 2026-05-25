@@ -25,11 +25,7 @@ impl NavigatedPage<WordMessage> for WordState {
 }
 
 impl WordState {
-    pub(crate) fn new(
-        word: WordData,
-        index: usize,
-        state: Arc<Mutex<AppState>>,
-    ) -> WordState {
+    pub(crate) fn new(word: WordData, index: usize, state: Arc<Mutex<AppState>>) -> WordState {
         WordState { state, index, word }
     }
 }
@@ -42,7 +38,7 @@ impl WordState {
                 let mut state = self.state.lock().unwrap();
                 state.dictionary[self.index] = self.word.clone();
                 update_word(&mut self.word, &state.connection);
-                return Task::done(RootMessage::Word(WordMessage::Back))
+                return Task::done(RootMessage::Word(WordMessage::Back));
             }
             WordMessage::Delete => {
                 let mut state = self.state.lock().unwrap();
@@ -57,15 +53,14 @@ impl WordState {
             WordMessage::SetValue(n) => {
                 self.word.value = n;
             }
-            WordMessage::SetAdditional(key, value) => {
-                match key.as_str() {
-                    _ => {    self.word.additional.insert(key, value.clone());}
-
+            WordMessage::SetAdditional(key, value) => match key.as_str() {
+                _ => {
+                    self.word.additional.insert(key, value.clone());
                 }
             },
             WordMessage::AddAdditional(key) => {
                 self.word.additional.insert(key, "".to_string());
-            },
+            }
         }
         Task::none()
     }
@@ -73,11 +68,28 @@ impl WordState {
     pub fn view(&self) -> Element<'_, WordMessage> {
         let mut fast_add = row![];
         if !self.word.additional.contains_key("reading") {
-            fast_add = fast_add.push(button("Чтение").style(button::text).on_press(WordMessage::AddAdditional("reading".to_string())));
+            fast_add = fast_add.push(
+                button("Чтение")
+                    .style(button::text)
+                    .on_press(WordMessage::AddAdditional("reading".to_string())),
+            );
         }
         if !self.word.additional.contains_key("description") {
-            fast_add = fast_add.push(button("Описание").style(button::text).on_press(WordMessage::AddAdditional("description".to_string())));
+            fast_add = fast_add.push(
+                button("Описание")
+                    .style(button::text)
+                    .on_press(WordMessage::AddAdditional("description".to_string())),
+            );
         }
+
+        if !self.word.additional.contains_key("context") {
+            fast_add = fast_add.push(
+                button("В контексте")
+                    .style(button::text)
+                    .on_press(WordMessage::AddAdditional("context".to_string())),
+            );
+        }
+        
         let mut col = iced::widget::column![
             button("Назад").on_press(WordMessage::Back),
             text!("Ключ"),
@@ -114,26 +126,32 @@ impl WordState {
         match value.0.as_str() {
             "reading" => self.reading_field(value),
             "description" => self.description_field(value),
+            "context" => self.context_field(value),
             _ => space().into(),
         }
     }
 
     fn reading_field(&self, value: (&String, &String)) -> Element<'_, WordMessage> {
-        column![
-            text!("Чтение слова"),
-            text_input("reading", &value.1)
-                .on_input(|string| WordMessage::SetAdditional("reading".to_string(), string))
-        ].spacing(DEFAULT_SPACING)
-        .into()
+        self.additional_field(value, "Чтение слова".to_string(), "reading".to_string())
     }
 
     fn description_field(&self, value: (&String, &String)) -> Element<'_, WordMessage> {
+        self.additional_field(value, "Описание".to_string(), "description".to_string())
+    }
+    
+    fn context_field(&self, value: (&String, &String)) -> Element<'_, WordMessage> {
+        self.additional_field(value, "В контексте".to_string(), "context".to_string())
+    }
+    
+    fn additional_field(&self, value: (&String, &String), name: String, id: String) -> Element<'_, WordMessage> {
         column![
-            text!("Описание"),
-            text_input("description", &value.1)
-                .on_input(|string| WordMessage::SetAdditional("description".to_string(), string))
-        ].spacing(DEFAULT_SPACING)
-            .into()    }
+            text!("{}", name),
+            text_input(id.clone().as_str(), &value.1)
+                .on_input(move |string| WordMessage::SetAdditional(id.clone(), string))
+        ]
+            .spacing(DEFAULT_SPACING)
+            .into()
+    }
 }
 #[derive(Debug, Clone)]
 pub enum WordMessage {

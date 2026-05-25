@@ -1,11 +1,13 @@
 use crate::data_provider::card_sets::{delete_set, update_card_set};
-use crate::lang::WordData;
+use crate::data_provider::card_stats::load_stats_of_set;
+use crate::lang::{SetOrderMode, WordData};
 use crate::repetition::RepetitionState;
 use crate::Page::{PreviousPage, Repetition};
 use crate::{AppState, NavigatedPage, Page, RootMessage, DEFAULT_SPACING};
 use iced::widget::button::danger;
 pub use iced::widget::button::{Catalog, Style};
-use iced::widget::{button, column, container, row, scrollable, space, text, text_input, Column};
+use iced::widget::container::bordered_box;
+use iced::widget::{button, column, container, radio, row, scrollable, space, text, text_input, Column};
 use iced::{Border, Center, Element, Fill, Left, Length, Shadow, Task, Theme};
 use rhai::{Engine, Scope};
 use std::sync::{Arc, Mutex};
@@ -14,6 +16,7 @@ use std::sync::{Arc, Mutex};
 pub struct RepetitionsState {
     selected_set: Option<usize>,
     correct_filters: Vec<bool>,
+    
     pub state: Arc<Mutex<AppState>>,
 }
 
@@ -21,14 +24,13 @@ impl NavigatedPage<RepetitionsMessage> for RepetitionsState {
     fn navigate(&self, message: &RepetitionsMessage) -> Option<Page> {
         if let RepetitionsMessage::Back = message {
             Some(PreviousPage)
-        }
-        else if let RepetitionsMessage::GoToRepetition = message {
+        } else if let RepetitionsMessage::GoToRepetition = message {
             let clone = self.state.clone();
             let card_set;
             {
                 card_set = self.state.lock().unwrap().card_sets[self.selected_set.unwrap()].clone();
             }
-            Some(Repetition(RepetitionState::new(card_set, clone) ))
+            Some(Repetition(RepetitionState::new(card_set, clone)))
         } else {
             None
         }
@@ -68,6 +70,9 @@ impl RepetitionsState {
             }
             RepetitionsMessage::SelectSet(index) => {
                 self.selected_set = Some(index);
+                let mut set = state.card_sets.get(index).unwrap().clone();
+                set.update_worst_words(&state);
+                state.card_sets[index] = set;
             }
             RepetitionsMessage::SetName(new) => {
                 state.card_sets[self.selected_set.unwrap()].name = new;
@@ -96,6 +101,9 @@ impl RepetitionsState {
                 let set = state.card_sets.get(self.selected_set.unwrap()).unwrap();
                 let count = set.get_word_list(&state).len();
                 state.card_sets[self.selected_set.unwrap()].count = Some(count);
+            },
+            RepetitionsMessage::SetOpenMode(mode) => {
+                state.card_sets.get_mut(self.selected_set.unwrap()).unwrap().open_mode = mode;
             }
         }
         Task::none()
@@ -143,21 +151,25 @@ impl RepetitionsState {
 
     fn selected_set_view(&self) -> Element<'_, RepetitionsMessage> {
         if let Some(index) = self.selected_set {
-            let sets = &self.state.lock().unwrap().card_sets;
-
+            let set;
+            {
+                set = self.state.lock().unwrap().card_sets[index].clone();
+            }
             return column![
                 scrollable(
                     column![
-                        text_input("Название набора", &sets[index].name)
+                        text_input("Название набора", &set.name)
                             .on_input(RepetitionsMessage::SetName),
-                        text_input("Передняя сторона", &sets[index].forward)
+                        text_input("Передняя сторона", &set.forward)
                             .on_input(RepetitionsMessage::SetForward),
-                        text_input("Задняя сторона", &sets[index].backward)
+                        text_input("Задняя сторона", &set.backward)
                             .on_input(RepetitionsMessage::SetBackward),
                         text!("Фильтр"),
-                        text_input("", &sets[index].filter).on_input(RepetitionsMessage::SetFilter),
+                        text_input("", &set.filter).on_input(RepetitionsMessage::SetFilter),
                         button("Проверить фильтр").on_press(RepetitionsMessage::TryFilter),
-                        self.count_view(&sets[index])
+                        self.count_view(&set),
+                        radio("Обычный режим", SetOrderMode::Default, Some(set.open_mode), RepetitionsMessage::SetOpenMode),
+                        self.words_words_view(&set)
                     ]
                     .spacing(DEFAULT_SPACING)
                 )
@@ -175,6 +187,28 @@ impl RepetitionsState {
             .into();
         }
         space().width(Length::FillPortion(2)).into()
+    }
+
+    fn words_words_view(&self, set: &CardSetSettings) -> Element<'_, RepetitionsMessage> {
+        column![
+            text!("Худшие слова"),
+            container(scrollable(self.worst_words_list(&set)).height(200)).style(bordered_box),
+            radio("Начать с плохих слов", SetOrderMode::TrainWorstFirst, Some(set.open_mode), RepetitionsMessage::SetOpenMode),
+            radio("Полностью случайно", SetOrderMode::FullRandom, Some(set.open_mode), RepetitionsMessage::SetOpenMode)
+        ]
+        .spacing(DEFAULT_SPACING)
+        .into()
+    }
+
+    fn worst_words_list(&self, set: &CardSetSettings) -> Element<'_, RepetitionsMessage> {
+
+
+        let mut column = Column::new();
+
+        for word in set.worst_words_list.clone().unwrap() {
+            column = column.push(text!("{} | {}", &word.key, &word.value));
+        }
+        column.into()
     }
 
     fn count_view(&self, set: &CardSetSettings) -> Element<'_, RepetitionsMessage> {
@@ -209,9 +243,10 @@ impl RepetitionsState {
 
         column
     }
+
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum RepetitionsMessage {
     Next,
     Back,
@@ -225,9 +260,10 @@ pub enum RepetitionsMessage {
     SetBackward(String),
     SetFilter(String),
     TryFilter,
+    SetOpenMode(SetOrderMode)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CardSetSettings {
     pub id: u32,
     pub name: String,
@@ -235,6 +271,8 @@ pub struct CardSetSettings {
     pub backward: String,
     pub filter: String,
     pub count: Option<usize>,
+    pub worst_words_list: Option<Vec<WordData>>,
+    pub open_mode: SetOrderMode
 }
 
 impl CardSetSettings {
@@ -246,6 +284,8 @@ impl CardSetSettings {
             backward: "".to_string(),
             filter: "true".to_string(),
             count: None,
+            worst_words_list: None,
+            open_mode: SetOrderMode::Default,
         }
     }
 
@@ -278,7 +318,15 @@ impl CardSetSettings {
                 .push_constant("value", word.value.clone())
                 .push_constant("tags", word.tags.clone())
                 .push_constant("more", more)
-                .push_constant("group", groups.iter().find(|g| g.id == word.group_id).cloned().unwrap().name);
+                .push_constant(
+                    "group",
+                    groups
+                        .iter()
+                        .find(|g| g.id == word.group_id)
+                        .cloned()
+                        .unwrap()
+                        .name,
+                );
 
             let result = engine.eval_ast_with_scope::<bool>(&mut scope, &ast);
             if result.is_ok() && result.unwrap() {
@@ -290,6 +338,32 @@ impl CardSetSettings {
     }
 
     pub fn require_speech(&self) -> bool {
-        self.forward == "speech" || self.backward == "speech" 
+        self.forward == "speech" || self.backward == "speech"
     }
+
+    fn update_worst_words(&mut self, state: &AppState){
+        if let Some(_) = self.worst_words_list {
+            return;
+        }
+
+        let connection = &state.connection;
+        let mut stats = load_stats_of_set(self, connection);
+        stats.sort_by_key(|s| s.calculated_score() as i32);
+        let avg = stats.iter().map(|s| s.calculated_score()).sum::<f32>() / stats.len() as f32;
+        let avg = avg * 0.7;
+        let bad: Vec<WordData> = stats
+            .iter()
+            .take_while(|word| word.calculated_score() < avg)
+            .map(|stat| {
+                state.dictionary[ state
+                    .dictionary
+                    .binary_search_by_key(&stat.word_id, |x| x.id)
+                    .unwrap()].clone()
+            })
+            .collect();
+
+        self.worst_words_list = Some(bad.clone());
+    }
+
+
 }

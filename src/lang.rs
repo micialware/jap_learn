@@ -6,6 +6,7 @@ use crate::AppState;
 use chrono::{DateTime, Utc};
 use rand::distr::weighted::WeightedIndex;
 use rand::distr::Distribution;
+use rand::prelude::SliceRandom;
 use rand::rng;
 use rand::rngs::ThreadRng;
 use serde::{Deserialize, Serialize};
@@ -299,7 +300,7 @@ impl CardStatistics {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum WordOpenMode {
     Easy,
     Ok,
@@ -311,11 +312,9 @@ pub enum WordOpenMode {
 pub struct CardSet {
     words: Vec<WordData>,
     set: Vec<CardStatistics>,
-    last_weights: WeightedIndex<f32>,
     current_word_index: Option<usize>,
-    generator: ThreadRng,
     state: Arc<Mutex<AppState>>,
-    history: Vec<usize>,
+    order_module: OrderModule,
 }
 
 impl CardSet {
@@ -331,14 +330,12 @@ impl CardSet {
         last_list
             .iter()
             .filter(|word| !saved_ids.contains(&word.id))
-            .map(|word| {
-                CardStatistics {
-                    id: 0,
-                    word_id: word.id.clone(),
-                    last_open: Utc::now(),
-                    score: 1,
-                    set_id: settings.id.clone(),
-                }
+            .map(|word| CardStatistics {
+                id: 0,
+                word_id: word.id.clone(),
+                last_open: Utc::now(),
+                score: 1,
+                set_id: settings.id.clone(),
             })
             .for_each(|mut new_statistic| {
                 add_stat(&mut new_statistic, &state_locked.connection);
@@ -355,34 +352,49 @@ impl CardSet {
             }
         }
 
-        let weights = current_set
-            .iter()
-            .map(|s| (100.0 / s.calculated_score()).powf(2.0) * 2.0)
-            .collect::<Vec<f32>>();
-        let indexes = WeightedIndex::new(weights).unwrap();
-
         Self {
             set: current_set,
             words: last_list,
-            last_weights: indexes,
             current_word_index: None,
-            generator: rng(),
             state: state_for,
-            history: vec![],
+            order_module: match settings.open_mode {
+                SetOrderMode::Default => OrderModule::SemiRandomSRS(SemiRandomSRSModule::new()),
+                SetOrderMode::TrainWorstFirst => {
+                    OrderModule::WorstWordsSRS(WorstWordsSRSModule::new())
+                }
+                SetOrderMode::FullRandom => OrderModule::RandomSRS(RandomSRSModule::new()),
+            },
         }
     }
 
     pub fn next(&mut self) -> (WordData, CardStatistics) {
-        let index = self.last_weights.sample(&mut self.generator);
+        let index = match self.order_module.clone() {
+            OrderModule::SemiRandomSRS(mut module) => {
+                if module.initializated == false {
+                    module.init(self)
+                }
+                let index = module.next(self);
+                self.order_module = OrderModule::SemiRandomSRS(module);
+                index
+            }
+            OrderModule::RandomSRS(mut module) => {
+                if module.initializated == false {
+                    module.init(self)
+                }
+                let index = module.next(self);
+                self.order_module = OrderModule::RandomSRS(module);
+                index
+            }
+            OrderModule::WorstWordsSRS(mut module) => {
+                if module.initializated == false {
+                    module.init(self)
+                }
+                let index = module.next(self);
+                self.order_module = OrderModule::WorstWordsSRS(module);
+                index
+            }
+        };
 
-        if self.history.contains(&index) {
-            return self.next();
-        }
-
-        if self.history.len() == self.history_len() {
-            self.history.remove(0);
-        }
-        self.history.push(index);
         self.current_word_index = Some(index);
         (self.words[index].clone(), self.set[index].clone())
     }
@@ -391,24 +403,172 @@ impl CardSet {
         if let None = self.current_word_index {
             return;
         }
+        let index = self.current_word_index.unwrap();
 
-        let word = &mut self.set[self.current_word_index.unwrap()];
+        let word = &mut self.set[index];
         word.update(status);
-        let new_weight = (100.0 / word.calculated_score()).powf(2.0);
-        self.last_weights
-            .update_weights(&[(self.current_word_index.unwrap(), &new_weight)])
-            .unwrap();
-        { update_stat_score(word, &self.state.lock().unwrap().connection) }
-    }
 
-    fn history_len(&self) -> usize {
-        min(
-            MAX_HISTORY_LEN,
-            (self.set.len() as f32 * MAX_HISTORY_LEN_PART) as usize,
-        )
+        match self.order_module.clone() {
+            OrderModule::SemiRandomSRS(mut module) => {
+                module.open(status, index, word.clone());
+                self.order_module = OrderModule::SemiRandomSRS(module);
+            }
+            OrderModule::RandomSRS(mut module) => {
+                module.open(status, index, word.clone());
+                self.order_module = OrderModule::RandomSRS(module);
+            }
+            OrderModule::WorstWordsSRS(mut module) => {
+                module.open(status, index, word.clone());
+                self.order_module = OrderModule::WorstWordsSRS(module);
+            }
+        }
+        update_stat_score(word, &self.state.lock().unwrap().connection)
     }
 
     pub fn len(&self) -> usize {
         self.set.len()
+    }
+}
+
+#[derive(Clone, PartialEq, Copy, Eq)]
+pub(crate) enum SetOrderMode {
+    Default,
+    TrainWorstFirst,
+    FullRandom,
+}
+
+#[derive(Clone)]
+enum OrderModule {
+    SemiRandomSRS(SemiRandomSRSModule),
+    RandomSRS(RandomSRSModule),
+    WorstWordsSRS(WorstWordsSRSModule),
+}
+
+trait SRSModule {
+    fn next(&mut self, set: &mut CardSet) -> usize;
+    fn open(&mut self, status: WordOpenMode, index: usize, updated_word: CardStatistics);
+    fn init(&mut self, set: &mut CardSet);
+}
+
+#[derive(Clone)]
+struct RandomSRSModule {
+    backet: Vec<usize>,
+    initializated: bool,
+}
+
+impl RandomSRSModule {
+    fn new() -> RandomSRSModule {
+        Self{
+            backet: vec![],
+            initializated: false,
+        }
+    }
+}
+
+impl SRSModule for RandomSRSModule {
+    fn next(&mut self, set: &mut CardSet) -> usize {
+        if self.backet.is_empty() {
+            self.backet = (0..set.words.len()).collect::<Vec<usize>>();
+            self.backet.shuffle(&mut rand::rng())
+        }
+
+        self.backet.pop().unwrap()
+    }
+
+    fn open(&mut self, _: WordOpenMode, _: usize, _: CardStatistics) {}
+
+    fn init(&mut self, set: &mut CardSet) {
+        self.initializated = true;
+        self.backet = (0..set.words.len()).collect::<Vec<usize>>();
+        self.backet.shuffle(&mut rand::rng())
+    }
+}
+
+#[derive(Clone)]
+struct SemiRandomSRSModule {
+    history: Vec<usize>,
+    last_weights: WeightedIndex<f32>,
+    generator: ThreadRng,
+    initializated: bool,
+}
+
+impl SemiRandomSRSModule {
+    fn new() -> SemiRandomSRSModule {
+        SemiRandomSRSModule {
+            history: vec![],
+            last_weights: WeightedIndex::new([1.0]).unwrap(),
+            generator: rng(),
+            initializated: false,
+        }
+    }
+}
+
+impl SRSModule for SemiRandomSRSModule {
+    fn next(&mut self, set: &mut CardSet) -> usize {
+        let index = self.last_weights.sample(&mut self.generator);
+
+        if self.history.contains(&index) {
+            return self.next(set);
+        }
+
+        if self.history.len() == self.history_len(set) {
+            self.history.remove(0);
+        }
+        self.history.push(index);
+
+        index
+    }
+
+    fn open(&mut self, status: WordOpenMode, index: usize, word: CardStatistics) {
+        let new_weight = (100.0 / word.calculated_score()).powf(2.0);
+        self.last_weights
+            .update_weights(&[(index, &new_weight)])
+            .unwrap();
+    }
+
+    fn init(&mut self, set: &mut CardSet) {
+        self.initializated = true;
+        let weights = set
+            .set
+            .iter()
+            .map(|s| (100.0 / s.calculated_score()).powf(2.0) * 2.0)
+            .collect::<Vec<f32>>();
+        self.last_weights = WeightedIndex::new(weights).unwrap();
+    }
+}
+
+impl SemiRandomSRSModule {
+    fn history_len(&self, set: &CardSet) -> usize {
+        min(
+            MAX_HISTORY_LEN,
+            (set.len() as f32 * MAX_HISTORY_LEN_PART) as usize,
+        )
+    }
+}
+
+#[derive(Clone)]
+struct WorstWordsSRSModule {
+    initializated: bool,
+}
+
+impl SRSModule for WorstWordsSRSModule {
+    fn next(&mut self, set: &mut CardSet) -> usize {
+        todo!()
+    }
+
+    fn open(&mut self, status: WordOpenMode, index: usize, updated_word: CardStatistics) {
+        todo!()
+    }
+
+    fn init(&mut self, set: &mut CardSet) {
+        todo!()
+    }
+}
+
+impl WorstWordsSRSModule {
+    fn new() -> WorstWordsSRSModule {
+        WorstWordsSRSModule {
+            initializated: false,
+        }
     }
 }

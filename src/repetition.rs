@@ -172,11 +172,12 @@ impl RepetitionState {
                 "value" => self.draw_value(word),
                 "speech" => self.draw_voice(),
                 "reading" => self.draw_reading(word),
+                "context" => self.draw_context(word),
                 _ => space().into(),
             })
         }
 
-        col.spacing(DEFAULT_SPACING).into()
+        col.spacing(DEFAULT_SPACING).align_x(Center).into()
     }
 
     fn answer_bar(&self) -> Element<'_, RepetitionMessage> {
@@ -216,6 +217,12 @@ impl RepetitionState {
         match word.additional.get("reading") {
             None => space().into(),
             Some(reading) => text!("{}", reading).size(24).into(),
+        }
+    }
+    fn draw_context(&self, word: &WordData) -> Element<'_, RepetitionMessage> {
+        match word.additional.get("context") {
+            None => space().into(),
+            Some(context) => text!("{}", context).size(24).into(),
         }
     }
 }

@@ -35,6 +35,7 @@ pub struct DictionaryState {
     selected_group_index: usize,
     reverse_list: bool,
     auto_save_queue: HashMap<usize, DateTime<Utc>>,
+    total_tags_list: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +117,7 @@ impl DictionaryState {
             no_typing: true,
             reverse_list: true,
             auto_save_queue: HashMap::new(),
+            total_tags_list: vec![],
         };
 
         result.update_tags();
@@ -149,9 +151,22 @@ impl DictionaryState {
                 }
                 return self.launch_auto_save_offset(i);
             }
-            DictionaryMessage::SetTags(i, v) => {
+            DictionaryMessage::SetTags(i, mut v) => {
                 {
                     let dict = &mut self.state.lock().unwrap().dictionary;
+
+                    let current_tags_value = dict[i].tags.clone();
+
+                    if v.ends_with(", ") && v.len() < current_tags_value.len() {
+                        v = v[..v.len() - 2].to_string()
+                    }
+
+
+                    while v.contains(",,") {
+                        let index = v.find(",,").unwrap();
+                        v.remove(index);
+                    }
+
                     dict.get_mut(i).unwrap().tags = v;
                 }
 
@@ -289,10 +304,10 @@ impl DictionaryState {
                 .spacing(5),
                 self.filters()
             ]
-            .spacing(DEFAULT_SPACING),
+                .spacing(DEFAULT_SPACING),
         )
-        .padding(10)
-        .into()
+            .padding(10)
+            .into()
     }
 
     fn words_list(&self) -> iced::Element<'_, DictionaryMessage> {
@@ -402,9 +417,9 @@ impl DictionaryState {
                 .on_press(Test)
                 .width(Length::Fill),
         ]
-        .width(250)
-        .spacing(DEFAULT_SPACING)
-        .into()
+            .width(250)
+            .spacing(DEFAULT_SPACING)
+            .into()
     }
 
     fn tags_selector(&self) -> iced::Element<'_, DictionaryMessage> {
@@ -445,6 +460,7 @@ impl DictionaryState {
                 });
         });
 
+
         let current_tags = self
             .tag_map
             .keys()
@@ -479,14 +495,15 @@ impl DictionaryState {
         let dict = &self.state.lock().unwrap().dictionary;
         let time = Instant::now();
 
-        self.include_map = dict.iter()
+        self.include_map = dict
+            .iter()
             .map(|word| (split_with_coma(word.tags.as_str()), word.group_id))
             .map(|(tags, word_group_id)| {
                 tags.iter().all(|t| include_tags.contains(t)) && word_group_id == group_id
-            }).collect();
+            })
+            .collect();
 
         println!("Time {}", time.elapsed().as_micros());
-
     }
 
     fn groups_panel(&self) -> iced::Element<'_, DictionaryMessage> {
@@ -525,7 +542,7 @@ impl DictionaryState {
             ]
             .spacing(DEFAULT_SPACING)
         ]
-        .into()
+            .into()
     }
 }
 
