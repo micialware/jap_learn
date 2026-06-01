@@ -9,6 +9,7 @@ use crate::Page::{Quiz, Writing};
 use crate::{AppState, NavigatedPage, Page, QuizState, RootMessage, DEFAULT_SPACING};
 use iced::widget::*;
 use iced::{alignment, Element, Task};
+use crate::sync::SyncState;
 
 pub struct SelectorState {
     pub set: KanaSet,
@@ -25,6 +26,7 @@ pub enum SelectorMessage {
     ToDictionary,
     ToRandomize,
     ToRepetitions,
+    ToSync,
 }
 
 impl NavigatedPage<SelectorMessage> for SelectorState {
@@ -47,6 +49,9 @@ impl NavigatedPage<SelectorMessage> for SelectorState {
         }
         if let SelectorMessage::ToRepetitions = message {
             return Some(Page::Repetitions(RepetitionsState::new(self.state.clone())));
+        }
+        if let SelectorMessage::ToSync = message {
+            return Some(Page::Sync(SyncState::new(self.state.clone())));
         }
         None
     }
@@ -80,7 +85,8 @@ impl SelectorState {
                     button("Переключить азбуки").on_press(SelectorMessage::Change),
                     button("Словарь").on_press(SelectorMessage::ToDictionary),
                     button("Рандомайзер").on_press(SelectorMessage::ToRandomize),
-                    button("Повторение").on_press(SelectorMessage::ToRepetitions)
+                    button("Повторение").on_press(SelectorMessage::ToRepetitions),
+                    button("Синхронизация").on_press(SelectorMessage::ToSync)
                 ]
                 .spacing(DEFAULT_SPACING),
                 self.rows_selector(),

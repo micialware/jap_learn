@@ -193,7 +193,7 @@ impl RepetitionsState {
         column![
             text!("Худшие слова"),
             container(scrollable(self.worst_words_list(&set)).height(200)).style(bordered_box),
-            radio("Начать с плохих слов", SetOrderMode::TrainWorstFirst, Some(set.open_mode), RepetitionsMessage::SetOpenMode),
+            // radio("Начать с плохих слов", SetOrderMode::TrainWorstFirst, Some(set.open_mode), RepetitionsMessage::SetOpenMode),
             radio("Полностью случайно", SetOrderMode::FullRandom, Some(set.open_mode), RepetitionsMessage::SetOpenMode)
         ]
         .spacing(DEFAULT_SPACING)

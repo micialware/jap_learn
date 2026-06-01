@@ -17,6 +17,16 @@ pub fn create_db() {
 
 fn create_tables(conn: &Connection) {
     conn.execute(
+        "create table settings
+(
+    id text primary key,
+    value text
+);",
+        (),
+    )
+        .unwrap_or_else(|e| 0);
+
+    conn.execute(
         "create table card_set
 (
     id       INTEGER
@@ -28,7 +38,7 @@ fn create_tables(conn: &Connection) {
 );",
         (),
     )
-    .unwrap();
+        .unwrap_or_else(|e| 0);
     conn.execute(
         "create table word_group
 (
@@ -38,7 +48,7 @@ fn create_tables(conn: &Connection) {
 );",
         (),
     )
-    .unwrap();
+        .unwrap_or_else(|e| 0);
     conn.execute(
         "create table words
 (
@@ -55,7 +65,7 @@ fn create_tables(conn: &Connection) {
 );",
         (),
     )
-    .unwrap();
+        .unwrap_or_else(|e| 0);
     conn.execute(
         "create table card_stats
 (
@@ -72,13 +82,13 @@ fn create_tables(conn: &Connection) {
 );",
         (),
     )
-    .unwrap();
+        .unwrap_or_else(|e| 0);
     conn.execute(
         "insert into word_group (name)
 values (\"Слова\");",
         (),
     )
-    .unwrap();
+        .unwrap_or_else(|e| 0);
 }
 
 pub fn add_word(word: &mut WordData, connection: &Connection) {

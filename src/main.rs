@@ -8,10 +8,12 @@ mod randomizer;
 mod repetition;
 mod repetitions;
 mod selector;
+mod sync;
 mod word;
 mod writing;
 
 use crate::data_provider::card_sets::load_sets;
+use crate::data_provider::settings::get_setting;
 use crate::data_provider::words::{create_db, load_word_groups, load_words};
 use crate::dictionary::{app_data_dir, DictionaryMessage, DictionaryState};
 use crate::dictionary_test::{DictionaryQuizMessage, DictionaryQuizState};
@@ -21,10 +23,12 @@ use crate::randomizer::randomizer::{RandomizerMessage, RandomizerState};
 use crate::repetition::{RepetitionMessage, RepetitionState};
 use crate::repetitions::{CardSetSettings, RepetitionsMessage, RepetitionsState};
 use crate::selector::*;
+use crate::sync::{SyncMessage, SyncState};
 use crate::word::{WordMessage, WordState};
 use crate::writing::{WritingMessage, WritingState};
 use crate::Page::{
-    Dictionary, DictionaryQuiz, Quiz, Randomizer, Repetition, Repetitions, Selector, Word, Writing,
+    Dictionary, DictionaryQuiz, Quiz, Randomizer, Repetition, Repetitions, Selector, Sync, Word,
+    Writing,
 };
 use crate::RootMessage::Keyboard;
 use iced::keyboard::Event;
@@ -60,6 +64,7 @@ pub enum RootMessage {
     Repetitions(RepetitionsMessage),
     Repetition(RepetitionMessage),
     Word(WordMessage),
+    Sync(SyncMessage),
     Keyboard(Event),
 }
 
@@ -73,6 +78,7 @@ pub enum Page {
     Repetitions(RepetitionsState),
     Repetition(RepetitionState),
     Word(WordState),
+    Sync(SyncState),
     PreviousPage,
 }
 
@@ -85,6 +91,7 @@ pub struct AppState {
     pub card_sets: Vec<CardSetSettings>,
     pub word_groups: Vec<WordGroup>,
     pub connection: Connection,
+    pub sync_data: AppSettings,
 }
 
 impl Default for ScreenState {
@@ -96,17 +103,24 @@ impl Default for ScreenState {
         let list = load_words(&connection);
         let sets = load_sets(&connection);
         let groups = load_word_groups(&connection);
+        let setting = load_settings(&connection);
 
         let state = Arc::new(Mutex::new(AppState {
             dictionary: list,
             card_sets: sets,
             connection,
             word_groups: groups,
+            sync_data: setting,
         }));
         ScreenState {
             stack: vec![Selector(SelectorState::new(state.clone()))],
         }
     }
+}
+
+fn load_settings(connection: &Connection) -> AppSettings {
+    let key = get_setting("SYNC_KEY".to_string(), connection);
+    AppSettings { key }
 }
 
 impl ScreenState {
@@ -130,7 +144,8 @@ impl ScreenState {
             Randomizer,
             Repetitions,
             Repetition,
-            Word
+            Word,
+            Sync
         );
         Task::none()
     }
@@ -145,7 +160,8 @@ impl ScreenState {
             Randomizer,
             Repetitions,
             Repetition,
-            Word
+            Word,
+            Sync
         )
     }
 
@@ -156,6 +172,10 @@ impl ScreenState {
             _ => Task::none(),
         }
     }
+}
+
+pub struct AppSettings {
+    key: Option<String>,
 }
 
 #[macro_export]
