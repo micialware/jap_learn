@@ -8,7 +8,7 @@ use iced::widget::{button, column, container, progress_bar, row, space, text};
 use iced::{Element, Fill, Font, Left, Task};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use zstd::{Encoder, DEFAULT_COMPRESSION_LEVEL};
+use zstd::{Decoder, Encoder, DEFAULT_COMPRESSION_LEVEL};
 use crate::dictionary::app_data_dir;
 
 const API_URL: &str = "https://learning.micialware.ru/";
@@ -99,7 +99,20 @@ impl SyncState {
 
                 return tasks;
             }
-            SyncMessage::GetLast => self.prepare_to_db_interaction(),
+            SyncMessage::GetLast => {
+                let id = self.state.lock().unwrap().sync_data.key.clone().unwrap();
+                let tasks = Task::batch([
+                    Task::perform(
+                        async { tokio::time::sleep(Duration::from_millis(200)).await },
+                        |_| RootMessage::Sync(NextAnimation),
+                    ),
+                    Task::perform(load_data(id), |_| {
+                        RootMessage::Sync(SyncMessage::NetworkFinished)
+                    }),
+                ]);
+
+                return tasks;
+            },
             NextAnimation => {
                 self.progress += 1.0;
                 if self.progress > 5.0 {
@@ -206,6 +219,25 @@ fn compress(data: Vec<u8>) -> Vec<u8> {
     io::copy(&mut &data[..], &mut encoder).unwrap();
     let compressed = encoder.finish().unwrap();
     compressed
+}
+
+async fn load_data(id: String){
+    let api_url = API_URL.to_string();
+    let id_url = format!("{api_url}download/{id}");
+    let client = reqwest::Client::new();
+    let data = client.get(&id_url).send().await.unwrap().bytes().await.unwrap().to_vec();
+    let data = decompress(data);
+
+    let path = app_data_dir();
+    let db_file = path.join("data.db");
+    tokio::fs::write(db_file, data).await.unwrap();
+}
+
+fn decompress(data: Vec<u8>) -> Vec<u8> {
+    let mut decoder = Decoder::new(&data[..]).unwrap();
+    let mut decompressed = Vec::new();
+    io::copy(&mut decoder, &mut decompressed).unwrap();
+    decompressed
 }
 
 async fn first_sync() -> String {
