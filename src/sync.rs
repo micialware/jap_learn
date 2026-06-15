@@ -1,15 +1,16 @@
-use std::io;
-use crate::data_provider::settings::set_setting;
+use crate::data_provider::settings::{delete_settings, set_setting};
+use crate::dictionary::app_data_dir;
 use crate::sync::SyncMessage::NextAnimation;
 use crate::Page::PreviousPage;
 use crate::{AppState, NavigatedPage, Page, RootMessage, DEFAULT_SPACING};
+use iced::widget::button::danger;
 use iced::widget::container::rounded_box;
 use iced::widget::{button, column, container, progress_bar, row, space, text};
-use iced::{Element, Fill, Font, Left, Task};
+use iced::{Center, Element, Fill, Font, Left, Task};
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zstd::{Decoder, Encoder, DEFAULT_COMPRESSION_LEVEL};
-use crate::dictionary::app_data_dir;
 
 const API_URL: &str = "https://learning.micialware.ru/";
 /*const API_URL: &str = "http://localhost:8089/";*/
@@ -26,6 +27,8 @@ pub enum SyncMessage {
     GetLast,
     NextAnimation,
     NetworkFinished,
+    Disable,
+    DisableSync,
 }
 #[derive(Clone)]
 pub struct SyncState {
@@ -112,7 +115,7 @@ impl SyncState {
                 ]);
 
                 return tasks;
-            },
+            }
             NextAnimation => {
                 self.progress += 1.0;
                 if self.progress > 5.0 {
@@ -128,6 +131,13 @@ impl SyncState {
             SyncMessage::NetworkFinished => {
                 self.frozen = false;
             }
+            SyncMessage::Disable => {}
+            SyncMessage::DisableSync => {
+                let mut state = self.state.lock().unwrap();
+                state.sync_data.key = None;
+
+                delete_settings("SYNC_KEY".to_string(), &state.connection);
+            }
         }
         Task::none()
     }
@@ -135,7 +145,9 @@ impl SyncState {
         container(
             column![
                 button("Назад").on_press(SyncMessage::Back),
-                row![self.sync_column(), self.app_updater()].spacing(DEFAULT_SPACING)
+                row![space().width(Fill), self.sync_column(), space().width(Fill)]
+                    .spacing(DEFAULT_SPACING)
+                    .width(Fill)
             ]
             .align_x(Left)
             .width(Fill)
@@ -153,31 +165,39 @@ impl SyncState {
         } else {
             space().into()
         };
-        if let Some(key) = self.state.lock().unwrap().sync_data.key.clone() {
-            column![
-                text!("Ваш ключ синхронизации"),
-                container(container(text!("{}", key).size(20).font(Font::MONOSPACE)).padding(3))
+        {
+            if let Some(key) = self.state.lock().unwrap().sync_data.key.clone() {
+                column![
+                    text!("Ваш ключ синхронизации"),
+                    container(
+                        container(text!("{}", key).size(20).font(Font::MONOSPACE)).padding(3)
+                    )
                     .style(rounded_box),
-                button("Скопировать в буффер обмена").on_press(SyncMessage::CopyKey),
-                row![
-                    button("↑ Отправить").on_press(SyncMessage::Send),
-                    button("↓ Скачать").on_press(SyncMessage::GetLast)
+                    button("Скопировать в буффер обмена")
+                        .on_press(SyncMessage::CopyKey)
+                        .width(Fill),
+                    row![
+                        button("↑ Отправить").on_press(SyncMessage::Send),
+                        space().width(Fill),
+                        button("↓ Скачать").on_press(SyncMessage::GetLast)
+                    ]
+                    .spacing(DEFAULT_SPACING),
+                    container(network_view).width(Fill),
+                    button("Отключить синхронизацию")
+                        .style(danger)
+                        .on_press(SyncMessage::DisableSync),
                 ]
-                .spacing(DEFAULT_SPACING),
-                container(network_view).width(Fill),
-            ]
-            .spacing(DEFAULT_SPACING)
-            .width(Fill)
-            .into()
-        } else {
-            column![
-                button("Создать сохранение").on_press(SyncMessage::InitSync),
-                button("Вставить ключ из буффера").on_press(SyncMessage::GetKey),
-            ]
-            .spacing(DEFAULT_SPACING)
-            .width(Fill)
-            .into()
+            } else {
+                column![
+                    button("Создать сохранение").on_press(SyncMessage::InitSync),
+                    button("Вставить ключ из буффера").on_press(SyncMessage::GetKey),
+                ]
+            }
         }
+        .spacing(DEFAULT_SPACING)
+        .align_x(Center)
+        .width(300)
+        .into()
     }
 
     fn app_updater(&self) -> Element<'_, SyncMessage> {
@@ -221,11 +241,19 @@ fn compress(data: Vec<u8>) -> Vec<u8> {
     compressed
 }
 
-async fn load_data(id: String){
+async fn load_data(id: String) {
     let api_url = API_URL.to_string();
     let id_url = format!("{api_url}download/{id}");
     let client = reqwest::Client::new();
-    let data = client.get(&id_url).send().await.unwrap().bytes().await.unwrap().to_vec();
+    let data = client
+        .get(&id_url)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap()
+        .to_vec();
     let data = decompress(data);
 
     let path = app_data_dir();
