@@ -277,10 +277,10 @@ impl CardStatistics {
             }
             WordOpenMode::Ok => self.score = (self.calculated_score() + 2.0).round() as i32,
             WordOpenMode::Hard => {
-                self.score = (self.calculated_score() - 1.0).round() as i32;
+                self.score = (self.calculated_score() * 0.75).round() as i32;
             }
             WordOpenMode::None => {
-                self.score = (self.calculated_score() * 0.5) as i32;
+                self.score = (self.calculated_score() * 0.4) as i32;
             }
         }
 
@@ -359,9 +359,9 @@ impl CardSet {
             state: state_for,
             order_module: match settings.open_mode {
                 SetOrderMode::Default => OrderModule::SemiRandomSRS(SemiRandomSRSModule::new()),
-                SetOrderMode::TrainWorstFirst => {
-                    OrderModule::WorstWordsSRS(WorstWordsSRSModule::new())
-                }
+                // SetOrderMode::TrainWorstFirst => {
+                //     OrderModule::WorstWordsSRS(WorstWordsSRSModule::new())
+                // }
                 SetOrderMode::FullRandom => OrderModule::RandomSRS(RandomSRSModule::new()),
             },
         }
@@ -370,7 +370,7 @@ impl CardSet {
     pub fn next(&mut self) -> (WordData, CardStatistics) {
         let index = match self.order_module.clone() {
             OrderModule::SemiRandomSRS(mut module) => {
-                if module.initializated == false {
+                if module.initialized == false {
                     module.init(self)
                 }
                 let index = module.next(self);
@@ -378,21 +378,21 @@ impl CardSet {
                 index
             }
             OrderModule::RandomSRS(mut module) => {
-                if module.initializated == false {
+                if module.initialized == false {
                     module.init(self)
                 }
                 let index = module.next(self);
                 self.order_module = OrderModule::RandomSRS(module);
                 index
             }
-            OrderModule::WorstWordsSRS(mut module) => {
-                if module.initializated == false {
-                    module.init(self)
-                }
-                let index = module.next(self);
-                self.order_module = OrderModule::WorstWordsSRS(module);
-                index
-            }
+            // OrderModule::WorstWordsSRS(mut module) => {
+            //     if module.initializated == false {
+            //         module.init(self)
+            //     }
+            //     let index = module.next(self);
+            //     self.order_module = OrderModule::WorstWordsSRS(module);
+            //     index
+            // }
         };
 
         self.current_word_index = Some(index);
@@ -417,10 +417,10 @@ impl CardSet {
                 module.open(status, index, word.clone());
                 self.order_module = OrderModule::RandomSRS(module);
             }
-            OrderModule::WorstWordsSRS(mut module) => {
-                module.open(status, index, word.clone());
-                self.order_module = OrderModule::WorstWordsSRS(module);
-            }
+            // OrderModule::WorstWordsSRS(mut module) => {
+            //     module.open(status, index, word.clone());
+            //     self.order_module = OrderModule::WorstWordsSRS(module);
+            // }
         }
         update_stat_score(word, &self.state.lock().unwrap().connection)
     }
@@ -431,9 +431,9 @@ impl CardSet {
 }
 
 #[derive(Clone, PartialEq, Copy, Eq)]
-pub(crate) enum SetOrderMode {
+pub enum SetOrderMode {
     Default,
-    TrainWorstFirst,
+    // TrainWorstFirst,
     FullRandom,
 }
 
@@ -441,7 +441,7 @@ pub(crate) enum SetOrderMode {
 enum OrderModule {
     SemiRandomSRS(SemiRandomSRSModule),
     RandomSRS(RandomSRSModule),
-    WorstWordsSRS(WorstWordsSRSModule),
+    // WorstWordsSRS(WorstWordsSRSModule),
 }
 
 trait SRSModule {
@@ -452,35 +452,35 @@ trait SRSModule {
 
 #[derive(Clone)]
 struct RandomSRSModule {
-    backet: Vec<usize>,
-    initializated: bool,
+    basket: Vec<usize>,
+    initialized: bool,
 }
 
 impl RandomSRSModule {
     fn new() -> RandomSRSModule {
         Self{
-            backet: vec![],
-            initializated: false,
+            basket: vec![],
+            initialized: false,
         }
     }
 }
 
 impl SRSModule for RandomSRSModule {
     fn next(&mut self, set: &mut CardSet) -> usize {
-        if self.backet.is_empty() {
-            self.backet = (0..set.words.len()).collect::<Vec<usize>>();
-            self.backet.shuffle(&mut rand::rng())
+        if self.basket.is_empty() {
+            self.basket = (0..set.words.len()).collect::<Vec<usize>>();
+            self.basket.shuffle(&mut rand::rng())
         }
 
-        self.backet.pop().unwrap()
+        self.basket.pop().unwrap()
     }
 
     fn open(&mut self, _: WordOpenMode, _: usize, _: CardStatistics) {}
 
     fn init(&mut self, set: &mut CardSet) {
-        self.initializated = true;
-        self.backet = (0..set.words.len()).collect::<Vec<usize>>();
-        self.backet.shuffle(&mut rand::rng())
+        self.initialized = true;
+        self.basket = (0..set.words.len()).collect::<Vec<usize>>();
+        self.basket.shuffle(&mut rand::rng())
     }
 }
 
@@ -489,7 +489,7 @@ struct SemiRandomSRSModule {
     history: Vec<usize>,
     last_weights: WeightedIndex<f32>,
     generator: ThreadRng,
-    initializated: bool,
+    initialized: bool,
 }
 
 impl SemiRandomSRSModule {
@@ -498,7 +498,7 @@ impl SemiRandomSRSModule {
             history: vec![],
             last_weights: WeightedIndex::new([1.0]).unwrap(),
             generator: rng(),
-            initializated: false,
+            initialized: false,
         }
     }
 }
@@ -519,7 +519,7 @@ impl SRSModule for SemiRandomSRSModule {
         index
     }
 
-    fn open(&mut self, status: WordOpenMode, index: usize, word: CardStatistics) {
+    fn open(&mut self, _: WordOpenMode, index: usize, word: CardStatistics) {
         let new_weight = (100.0 / word.calculated_score()).powf(2.0);
         self.last_weights
             .update_weights(&[(index, &new_weight)])
@@ -527,7 +527,7 @@ impl SRSModule for SemiRandomSRSModule {
     }
 
     fn init(&mut self, set: &mut CardSet) {
-        self.initializated = true;
+        self.initialized = true;
         let weights = set
             .set
             .iter()
@@ -546,29 +546,29 @@ impl SemiRandomSRSModule {
     }
 }
 
-#[derive(Clone)]
-struct WorstWordsSRSModule {
-    initializated: bool,
-}
+// #[derive(Clone)]
+// struct WorstWordsSRSModule {
+//     initializated: bool,
+// }
 
-impl SRSModule for WorstWordsSRSModule {
-    fn next(&mut self, set: &mut CardSet) -> usize {
-        todo!()
-    }
-
-    fn open(&mut self, status: WordOpenMode, index: usize, updated_word: CardStatistics) {
-        todo!()
-    }
-
-    fn init(&mut self, set: &mut CardSet) {
-        todo!()
-    }
-}
-
-impl WorstWordsSRSModule {
-    fn new() -> WorstWordsSRSModule {
-        WorstWordsSRSModule {
-            initializated: false,
-        }
-    }
-}
+// impl SRSModule for WorstWordsSRSModule {
+//     fn next(&mut self, _: &mut CardSet) -> usize {
+//         todo!()
+//     }
+//
+//     fn open(&mut self, _: WordOpenMode, _: usize, _: CardStatistics) {
+//         todo!()
+//     }
+//
+//     fn init(&mut self, _: &mut CardSet) {
+//         todo!()
+//     }
+// }
+//
+// impl WorstWordsSRSModule {
+//     fn new() -> WorstWordsSRSModule {
+//         WorstWordsSRSModule {
+//             initializated: false,
+//         }
+//     }
+// }

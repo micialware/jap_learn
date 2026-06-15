@@ -14,7 +14,7 @@ mod writing;
 
 use crate::data_provider::card_sets::load_sets;
 use crate::data_provider::settings::get_setting;
-use crate::data_provider::words::{create_db, load_word_groups, load_words};
+use crate::data_provider::words::{ load_word_groups, load_words};
 use crate::dictionary::{app_data_dir, DictionaryMessage, DictionaryState};
 use crate::dictionary_test::{DictionaryQuizMessage, DictionaryQuizState};
 use crate::lang::{WordData, WordGroup};
@@ -37,6 +37,7 @@ use iced::{keyboard, Element, Subscription};
 use iced::{Font, Task};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
+use crate::data_provider::sqlite::create_db;
 
 const DEFAULT_SPACING: f32 = 10.0;
 

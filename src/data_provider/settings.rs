@@ -1,4 +1,3 @@
-use rusqlite::fallible_iterator::FallibleIterator;
 use rusqlite::Connection;
 
 pub fn get_setting(key: String, connection: &Connection) -> Option<String> {

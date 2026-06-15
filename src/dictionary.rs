@@ -15,7 +15,6 @@ use iced::widget::space::horizontal;
 use iced::widget::*;
 use iced::{Border, Color, Length, Shadow, Task};
 use rand::random_range;
-use rayon::iter::IndexedParallelIterator;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::ops::Add;
@@ -35,7 +34,6 @@ pub struct DictionaryState {
     selected_group_index: usize,
     reverse_list: bool,
     auto_save_queue: HashMap<usize, DateTime<Utc>>,
-    total_tags_list: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +115,6 @@ impl DictionaryState {
             no_typing: true,
             reverse_list: true,
             auto_save_queue: HashMap::new(),
-            total_tags_list: vec![],
         };
 
         result.update_tags();
