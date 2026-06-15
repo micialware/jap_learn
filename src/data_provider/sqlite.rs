@@ -10,7 +10,15 @@ pub fn create_db() {
         connection.execute("PRAGMA foreign_keys = ON;", []).unwrap();
 
         create_tables(&connection);
+    }else {
+        let connection = Connection::open(&db_file).unwrap();
+
+        ensure_db_schema(&connection);
     }
+}
+
+fn ensure_db_schema(conn: &Connection) {
+
 }
 
 fn create_tables(conn: &Connection) {

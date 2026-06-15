@@ -200,9 +200,9 @@ impl SyncState {
         .into()
     }
 
-    fn app_updater(&self) -> Element<'_, SyncMessage> {
+/*    fn app_updater(&self) -> Element<'_, SyncMessage> {
         column![].width(Fill).into()
-    }
+    }*/
 
     fn prepare_to_db_interaction(&mut self) {
         if self.frozen {
